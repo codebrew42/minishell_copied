@@ -1,0 +1,62 @@
+fix : parser.c
+
+cur ver is wrong
+
+//rules
+1. Operators (PIPE, OR, AND) cannot be at the start or end of the input.
+
+2. Redirects (REDIR_IN, REDIR_OUT, etc.) must be followed by a filename (argument).
+
+3. Consecutive operators are invalid unless part of a logical operator (e.g., `||`, `&&`).
+
+4. Commands must have arguments if required (e.g., CMD nodes should have non-empty args).
+
+5. Parentheses must be properly opened and closed, and nested correctly.
+
+//proto
+
+[200~int	validate_tokens(t_mshell *ms)
+{
+	t_token		*tok;
+	int			paren_count;
+
+	if (!ms->tokens)
+		return (0);
+	tok = ms->tokens;
+	paren_count = 0;
+	if (tok->type >= TYPE_PIPE && tok->type <= TYPE_PAREN_CLOSE)
+		return (0);
+	while (tok)
+	{
+		if (tok->type >= TYPE_REDIR_IN && tok->type <= TYPE_REDIR_HDC)
+			if (!tok->next || tok->next->type != TYPE_CMD)
+				return (0);
+		if (tok->type == TYPE_PAREN_OPEN)
+			paren_count++;
+		else if (tok->type == TYPE_PAREN_CLOSE)
+			paren_count--;
+		if (paren_count < 0)
+			return (0);
+		if ((tok->type >= TYPE_PIPE && tok->type <= TYPE_AND) &&
+			(!tok->next || tok->next->type >= TYPE_PIPE))
+			return (0);
+		tok = tok->next;
+	}
+	return (paren_count == 0 && ms->tokens->type != TYPE_PAREN_CLOSE);
+}
+
+t_ast	*parser(t_mshell *ms)
+{
+	t_token		*tokens;
+	t_ast		*ast;
+
+	if (!validate_tokens(ms))
+	{
+		free_token_and_reset(&ms->tokens);
+		return (NULL);
+	}
+	tokens = ms->tokens;
+	ast = parse_or(&tokens);
+	ms->tokens = tokens;
+	return (ast);
+}

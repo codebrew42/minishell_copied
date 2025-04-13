@@ -1,0 +1,209 @@
+original envp arr[0]: MallocNanoZone=0
+	[key: MallocNanoZone]
+	[val: 0]
+
+original envp arr[1]: USER=jieunpark
+	[key: USER]
+	[val: jieunpark]
+
+original envp arr[2]: COMMAND_MODE=unix2003
+	[key: COMMAND_MODE]
+	[val: unix2003]
+
+original envp arr[3]: __CFBundleIdentifier=com.todesktop.230313mzl4w4u92
+	[key: __CFBundleIdentifier]
+	[val: com.todesktop.230313mzl4w4u92]
+
+original envp arr[4]: PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin:/opt/X11/bin:/Library/Apple/usr/bin:/opt/homebrew/Caskroom/miniforge/base/bin:/opt/homebrew/Caskroom/miniforge/base/condabin:/opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts
+	[key: PATH]
+	[val: /opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin:/opt/X11/bin:/Library/Apple/usr/bin:/opt/homebrew/Caskroom/miniforge/base/bin:/opt/homebrew/Caskroom/miniforge/base/condabin:/opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts]
+
+original envp arr[5]: LOGNAME=jieunpark
+	[key: LOGNAME]
+	[val: jieunpark]
+
+original envp arr[6]: DISPLAY=/private/tmp/com.apple.launchd.sPtsIpMEQn/org.xquartz:0
+	[key: DISPLAY]
+	[val: /private/tmp/com.apple.launchd.sPtsIpMEQn/org.xquartz:0]
+
+original envp arr[7]: SSH_AUTH_SOCK=/private/tmp/com.apple.launchd.0VmSUhH64U/Listeners
+	[key: SSH_AUTH_SOCK]
+	[val: /private/tmp/com.apple.launchd.0VmSUhH64U/Listeners]
+
+original envp arr[8]: HOME=/Users/jieunpark
+	[key: HOME]
+	[val: /Users/jieunpark]
+
+original envp arr[9]: SHELL=/bin/zsh
+	[key: SHELL]
+	[val: /bin/zsh]
+
+original envp arr[10]: TMPDIR=/var/folders/mn/2zklk8_96876nyrlrc2k0lfm0000gn/T/
+	[key: TMPDIR]
+	[val: /var/folders/mn/2zklk8_96876nyrlrc2k0lfm0000gn/T/]
+
+original envp arr[11]: __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0
+	[key: __CF_USER_TEXT_ENCODING]
+	[val: 0x1F5:0x0:0x0]
+
+original envp arr[12]: XPC_SERVICE_NAME=0
+	[key: XPC_SERVICE_NAME]
+	[val: 0]
+
+original envp arr[13]: XPC_FLAGS=0x0
+	[key: XPC_FLAGS]
+	[val: 0x0]
+
+original envp arr[14]: ORIGINAL_XDG_CURRENT_DESKTOP=undefined
+	[key: ORIGINAL_XDG_CURRENT_DESKTOP]
+	[val: undefined]
+
+original envp arr[15]: CURSOR_TRACE_ID=540fd96f805a405fbfa00de4c9e1878e
+	[key: CURSOR_TRACE_ID]
+	[val: 540fd96f805a405fbfa00de4c9e1878e]
+
+original envp arr[16]: SHLVL=1
+	[key: SHLVL]
+	[val: 1]
+
+original envp arr[17]: PWD=/Users/jieunpark/coding/42/42_Minishell/minishell
+	[key: PWD]
+	[val: /Users/jieunpark/coding/42/42_Minishell/minishell]
+
+original envp arr[18]: OLDPWD=/Users/jieunpark/coding/42/42_Minishell
+	[key: OLDPWD]
+	[val: /Users/jieunpark/coding/42/42_Minishell]
+
+original envp arr[19]: HOMEBREW_PREFIX=/opt/homebrew
+	[key: HOMEBREW_PREFIX]
+	[val: /opt/homebrew]
+
+original envp arr[20]: HOMEBREW_CELLAR=/opt/homebrew/Cellar
+	[key: HOMEBREW_CELLAR]
+	[val: /opt/homebrew/Cellar]
+
+original envp arr[21]: HOMEBREW_REPOSITORY=/opt/homebrew
+	[key: HOMEBREW_REPOSITORY]
+	[val: /opt/homebrew]
+
+original envp arr[22]: INFOPATH=/opt/homebrew/share/info:/opt/homebrew/share/info:
+	[key: INFOPATH]
+	[val: /opt/homebrew/share/info:/opt/homebrew/share/info:]
+
+original envp arr[23]: CONDA_EXE=/opt/homebrew/Caskroom/miniforge/base/bin/conda
+	[key: CONDA_EXE]
+	[val: /opt/homebrew/Caskroom/miniforge/base/bin/conda]
+
+original envp arr[24]: _CE_M=
+	[key: _CE_M]
+	[val: ]
+
+original envp arr[25]: _CE_CONDA=
+	[key: _CE_CONDA]
+	[val: ]
+
+original envp arr[26]: CONDA_PYTHON_EXE=/opt/homebrew/Caskroom/miniforge/base/bin/python
+	[key: CONDA_PYTHON_EXE]
+	[val: /opt/homebrew/Caskroom/miniforge/base/bin/python]
+
+original envp arr[27]: CONDA_SHLVL=1
+	[key: CONDA_SHLVL]
+	[val: 1]
+
+original envp arr[28]: CONDA_PREFIX=/opt/homebrew/Caskroom/miniforge/base
+	[key: CONDA_PREFIX]
+	[val: /opt/homebrew/Caskroom/miniforge/base]
+
+original envp arr[29]: CONDA_DEFAULT_ENV=base
+	[key: CONDA_DEFAULT_ENV]
+	[val: base]
+
+original envp arr[30]: CONDA_PROMPT_MODIFIER=(base) 
+	[key: CONDA_PROMPT_MODIFIER]
+	[val: (base) ]
+
+original envp arr[31]: TESSDATA_PREFIX=/opt/homebrew/share/
+	[key: TESSDATA_PREFIX]
+	[val: /opt/homebrew/share/]
+
+original envp arr[32]: LIBRARY_PATH=/opt/homebrew/lib
+	[key: LIBRARY_PATH]
+	[val: /opt/homebrew/lib]
+
+original envp arr[33]: TERM_PROGRAM=vscode
+	[key: TERM_PROGRAM]
+	[val: vscode]
+
+original envp arr[34]: TERM_PROGRAM_VERSION=0.45.14
+	[key: TERM_PROGRAM_VERSION]
+	[val: 0.45.14]
+
+original envp arr[35]: LANG=en_US.UTF-8
+	[key: LANG]
+	[val: en_US.UTF-8]
+
+original envp arr[36]: COLORTERM=truecolor
+	[key: COLORTERM]
+	[val: truecolor]
+
+original envp arr[37]: GIT_ASKPASS=/Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass.sh
+	[key: GIT_ASKPASS]
+	[val: /Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass.sh]
+
+original envp arr[38]: VSCODE_GIT_ASKPASS_NODE=/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)
+	[key: VSCODE_GIT_ASKPASS_NODE]
+	[val: /Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)]
+
+original envp arr[39]: VSCODE_GIT_ASKPASS_EXTRA_ARGS=
+	[key: VSCODE_GIT_ASKPASS_EXTRA_ARGS]
+	[val: ]
+
+original envp arr[40]: VSCODE_GIT_ASKPASS_MAIN=/Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass-main.js
+	[key: VSCODE_GIT_ASKPASS_MAIN]
+	[val: /Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass-main.js]
+
+original envp arr[41]: VSCODE_GIT_IPC_HANDLE=/var/folders/mn/2zklk8_96876nyrlrc2k0lfm0000gn/T/vscode-git-6030d65afe.sock
+	[key: VSCODE_GIT_IPC_HANDLE]
+	[val: /var/folders/mn/2zklk8_96876nyrlrc2k0lfm0000gn/T/vscode-git-6030d65afe.sock]
+
+original envp arr[42]: VSCODE_INJECTION=1
+	[key: VSCODE_INJECTION]
+	[val: 1]
+
+original envp arr[43]: ZDOTDIR=/Users/jieunpark
+	[key: ZDOTDIR]
+	[val: /Users/jieunpark]
+
+original envp arr[44]: USER_ZDOTDIR=/Users/jieunpark
+	[key: USER_ZDOTDIR]
+	[val: /Users/jieunpark]
+
+original envp arr[45]: TERM=xterm-256color
+	[key: TERM]
+	[val: xterm-256color]
+
+original envp arr[46]: _=/Users/jieunpark/coding/42/42_Minishell/minishell/./minishell
+	[key: _]
+	[val: /Users/jieunpark/coding/42/42_Minishell/minishell/./minishell]
+
+printing path starts...
+str[0]: /opt/homebrew/bin
+str[1]: /opt/homebrew/sbin
+str[2]: /Library/Frameworks/Python.framework/Versions/3.10/bin
+str[3]: /usr/local/bin
+str[4]: /System/Cryptexes/App/usr/bin
+str[5]: /usr/bin
+str[6]: /bin
+str[7]: /usr/sbin
+str[8]: /sbin
+str[9]: /usr/local/go/bin
+str[10]: /opt/X11/bin
+str[11]: /Library/Apple/usr/bin
+str[12]: /opt/homebrew/Caskroom/miniforge/base/bin
+str[13]: /opt/homebrew/Caskroom/miniforge/base/condabin
+str[14]: /opt/homebrew/bin
+str[15]: /opt/homebrew/sbin
+str[16]: /Library/Frameworks/Python.framework/Versions/3.10/bin
+str[17]: /Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts
+str[18]: /Users/jieunpark/Library/Application Support/JetBrains/Toolbox/scripts
+printing path ends...

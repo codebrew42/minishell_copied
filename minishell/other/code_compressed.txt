@@ -1,0 +1,1813 @@
+parser.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   parser.c                                           :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:59:31 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:59:31 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int				parser(t_token **tokens, t_ast **ast_root);
+t_ast			*save_args_redirs(t_token **tokens, t_ast **cur, t_ast **root);
+t_ast			*save_args(t_token **tokens, t_ast **cur, t_ast **root);
+t_ast			*save_single_arg(t_token **tokens, t_ast **cur, t_ast **root);
+
+static t_ast	*tk_to_ast(t_token **cur_tk, t_ast **cur_ast, t_ast **ast_root)
+{
+	while (*cur_tk)
+	{
+		if (is_paren_type((*cur_tk)->type) || is_op_type((*cur_tk)->type))
+			*cur_ast = save_type(cur_tk, cur_ast, ast_root);
+		else if (has_embedded_redirs(*cur_tk))
+			*cur_ast = save_args_redirs(cur_tk, cur_ast, ast_root);
+		else if (is_redir_not_hdc_type((*cur_tk)->type))
+			*cur_ast = save_single_arg(cur_tk, cur_ast, ast_root);
+		else
+			*cur_ast = save_args(cur_tk, cur_ast, ast_root);
+		if (!*cur_ast)
+			return (NULL);
+		*cur_tk = (*cur_tk)->next;
+	}
+	return (*cur_ast);
+}
+
+int	parser(t_token **tokens, t_ast **ast_root)
+{
+	t_token		*cur_tk;
+	t_ast		*cur_ast;
+	t_token		*head;
+
+	if (!tokens || !*tokens || !ast_root)
+		return (0);
+	head = *tokens;
+	cur_tk = head;
+	cur_ast = NULL;
+	*ast_root = NULL;
+	if (!tk_to_ast(&cur_tk, &cur_ast, ast_root))
+		return (*tokens = head, 0);
+	*tokens = head;
+	return (validate_ast(ast_root, tokens, head));
+}
+
+t_ast	*save_args_redirs(t_token **tokens, t_ast **cur, t_ast **root)
+{
+	t_ast	*cmd_node;
+	t_ast	*next_node;
+	t_token	*start;
+
+	if (!tokens || !*tokens)
+		return (NULL);
+	start = *tokens;
+	cmd_node = create_ast_node(TYPE_CMD);
+	if (!cmd_node)
+		return (NULL);
+	save_to_position(root, cur, cmd_node);
+	if (!save_args_skip_redir(tokens, cmd_node, start))
+		return (free_ast(cmd_node), NULL);
+	next_node = cmd_node;
+	if (!process_redirections(start, &next_node))
+		return (free_ast(cmd_node), NULL);
+	return (next_node);
+}
+
+t_ast	*save_single_arg(t_token **tokens, t_ast **cur, t_ast **root)
+{
+	t_ast	*node;
+
+	node = create_ast_node((*tokens)->type);
+	if (!node)
+		return (NULL);
+	if (is_redirection_type((*tokens)->type) && (*tokens)->next
+		&& (*tokens)->next->type == TYPE_TMP_WORD)
+	{
+		node->args = malloc(sizeof(char *) * 2);
+		if (!node->args)
+			return (free(node), NULL);
+		node->args[0] = ft_strdup((*tokens)->next->value);
+		if (!node->args[0])
+		{
+			free(node->args);
+			return (free(node), NULL);
+		}
+		node->args[1] = NULL;
+		*tokens = (*tokens)->next;
+	}
+	save_to_position(root, cur, node);
+	return (node);
+}
+
+t_ast	*save_args(t_token **tokens, t_ast **cur, t_ast **root)
+{
+	t_ast	*node;
+
+	if (!tokens || !*tokens)
+		return (NULL);
+	if ((*tokens)->type == TYPE_REDIR_HDC)
+	{
+		if (!(*tokens)->next || (*tokens)->next->type != TYPE_TMP_WORD)
+		{
+			err_syntax("syntax error near unexpected token `newline'\n", NULL);
+			return (NULL);
+		}
+		node = create_ast_node(TYPE_REDIR_HDC);
+	}
+	else
+		node = create_ast_node(TYPE_CMD);
+	if (!node)
+		return (NULL);
+	node->args = collect_cmd_args(tokens);
+	if (!node->args)
+	{
+		free_ast(node);
+		return (NULL);
+	}
+	save_to_position(root, cur, node);
+	return (node);
+}
+util_cmd_with_redir.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   util_cmd_with_redir.c                              :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:59:37 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:59:38 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/parser.h"
+
+int		has_embedded_redirs(t_token *tokens);
+int		save_args_skip_redir(t_token **tokens, t_ast *cmd_node, t_token *start);
+int		count_actual_args(t_token *start);
+int		process_cmd_redirections(t_token *start, t_ast **last_node);
+t_ast	*add_redir_node(t_token *redir, t_token *target, t_ast **last_node);
+
+int	has_embedded_redirs(t_token *tokens)
+{
+	t_token	*tmp;
+
+	tmp = tokens;
+	if (!tmp || tmp->type != TYPE_TMP_WORD)
+		return (0);
+	while (tmp && tmp->type == TYPE_TMP_WORD)
+		tmp = tmp->next;
+	if (tmp && is_redirection_type(tmp->type) && tmp->type != TYPE_REDIR_HDC
+		&& tmp->next && tmp->next->type == TYPE_TMP_WORD)
+		return (1);
+	return (0);
+}
+
+int	save_args_skip_redir(t_token **tokens, t_ast *cmd_node, t_token *start)
+{
+	t_token	*tmp;
+	int		i;
+
+	cmd_node->args = ft_calloc(count_actual_args(start) + 1, sizeof(char *));
+	if (!cmd_node->args)
+		return (0);
+	i = 0;
+	tmp = start;
+	while (tmp && is_not_op_or_paren(tmp->type))
+	{
+		if (tmp->type == TYPE_TMP_WORD
+			&& (tmp == start || !is_redirection_type(tmp->prev->type)))
+		{
+			cmd_node->args[i] = ft_strdup(tmp->value);
+			if (!cmd_node->args[i])
+				return (free_strarr(cmd_node->args), cmd_node->args = NULL, 0);
+			i++;
+		}
+		tmp = tmp->next;
+	}
+	tmp = start;
+	while (tmp && tmp->next && is_not_op_or_paren(tmp->next->type))
+		tmp = tmp->next;
+	*tokens = tmp;
+	return (1);
+}
+
+int	count_actual_args(t_token *start)
+{
+	t_token	*tmp;
+	int		count;
+
+	count = 0;
+	tmp = start;
+	while (tmp && !is_op_type(tmp->type) && !is_paren_type(tmp->type))
+	{
+		if (tmp->type == TYPE_TMP_WORD
+			&& (tmp == start || !is_redirection_type(tmp->prev->type)))
+			count++;
+		tmp = tmp->next;
+	}
+	return (count);
+}
+
+int	process_redirections(t_token *start, t_ast **last_node)
+{
+	t_token	*tmp;
+	t_ast	*redir_node;
+
+	tmp = start;
+	while (tmp && !is_op_type(tmp->type) && !is_paren_type(tmp->type))
+	{
+		if (is_redirection_type(tmp->type) && tmp->next
+			&& tmp->next->type == TYPE_TMP_WORD)
+		{
+			redir_node = create_redir_node(tmp, tmp->next, last_node);
+			if (!redir_node)
+				return (0);
+			*last_node = redir_node;
+			tmp = tmp->next;
+		}
+		tmp = tmp->next;
+	}
+	return (1);
+}
+
+t_ast	*create_redir_node(t_token *redir, t_token *target, t_ast **last_node)
+{
+	t_ast	*node;
+
+	node = create_ast_node(redir->type);
+	if (!node)
+		return (NULL);
+	node->args = malloc(sizeof(char *) * 2);
+	if (!node->args)
+	{
+		free(node);
+		return (NULL);
+	}
+	node->args[0] = ft_strdup(target->value);
+	if (!node->args[0])
+	{
+		free(node->args);
+		free(node);
+		return (NULL);
+	}
+	node->args[1] = NULL;
+	(*last_node)->right = node;
+	return (node);
+}
+util_save_to_ast.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   util_save_to_ast.c                                 :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:59:44 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:59:45 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+
+t_ast			*save_type(t_token **tokens, t_ast **current, t_ast **root);
+void			save_to_position(t_ast **root, t_ast **current, t_ast *node);
+t_ast			*create_ast_node(t_type type);
+static int		count_cmd_args(t_token *tokens);
+char			**collect_cmd_args(t_token **tokens);
+
+t_ast	*save_type(t_token **tokens, t_ast **current, t_ast **root)
+{
+	t_ast	*node;
+
+	node = create_ast_node((*tokens)->type);
+	if (!node)
+		return (NULL);
+	node->type = (*tokens)->type;
+	node->args = NULL;
+	save_to_position(root, current, node);
+	return (node);
+}
+
+void	save_to_position(t_ast **root, t_ast **current, t_ast *node)
+{
+	if (!(*root))
+		*root = node;
+	else if (*current)
+		(*current)->right = node;
+}
+
+t_ast	*create_ast_node(t_type type)
+{
+	t_ast	*node;
+
+	node = ft_calloc(1, sizeof(t_ast));
+	if (!node)
+		return (NULL);
+	node->type = type;
+	node->args = NULL;
+	node->left = NULL;
+	node->right = NULL;
+	return (node);
+}
+
+static int	count_cmd_args(t_token *tokens)
+{
+	int		arg_count;
+	t_token	*tmp;
+
+	arg_count = 0;
+	tmp = tokens;
+	if (tmp && tmp->type == TYPE_REDIR_HDC)
+		tmp = tmp->next;
+	while (tmp && (tmp->type == TYPE_TMP_WORD))
+	{
+		arg_count++;
+		tmp = tmp->next;
+	}
+	return (arg_count);
+}
+
+
+char	**collect_cmd_args(t_token **tokens)
+{
+	char	**args;
+	int		arg_count;
+	int		i;
+
+	arg_count = count_cmd_args(*tokens);
+	args = ft_calloc(arg_count + 1, sizeof(char *));
+	if (!args)
+		return (NULL);
+	if ((*tokens)->type == TYPE_REDIR_HDC)
+		*tokens = (*tokens)->next;
+	i = 0;
+	while (i < arg_count && *tokens && (*tokens)->type == TYPE_TMP_WORD)
+	{
+		if ((*tokens)->value[0] == '"' && (*tokens)->value[1] == '"')
+			args[i] = ft_strdup("");
+		else
+			args[i] = ft_strdup((*tokens)->value);
+		if (!args[i])
+			return (free_strarr(args), NULL);
+		i++;
+		if (i < arg_count)
+			*tokens = (*tokens)->next;
+	}
+	args[i] = NULL;
+	return (args);
+}
+util_type_check.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   util_type_check.c                                  :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:59:50 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:59:51 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+
+int	is_redir_not_hdc_type(t_type type);
+int	is_paren_type(t_type type);
+int	is_op_type(t_type type);
+int	is_not_op_or_paren(t_type type);
+int	is_redirection_type(t_type type);
+
+int	is_redir_not_hdc_type(t_type type)
+{
+	return (type == TYPE_REDIR_IN || type == TYPE_REDIR_OUT
+		|| type == TYPE_REDIR_APP);
+}
+
+int	is_paren_type(t_type type)
+{
+	return (type == TYPE_PAREN_OPEN || type == TYPE_PAREN_CLOSE);
+}
+
+int	is_op_type(t_type type)
+{
+	return (type == TYPE_PIPE || type == TYPE_AND || type == TYPE_OR);
+}
+
+int	is_not_op_or_paren(t_type type)
+{
+	return (!is_op_type(type) && !is_paren_type(type));
+}
+
+int	is_redirection_type(t_type type)
+{
+	return (type == TYPE_REDIR_IN || type == TYPE_REDIR_OUT
+		|| type == TYPE_REDIR_APP || type == TYPE_REDIR_HDC);
+}
+validate_linked_op.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   validate_linked_op.c                               :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:59:57 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:59:58 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int	validate_start_end_op(t_ast *ast);
+int	validate_linked_operators(t_ast *ast);
+
+int	validate_start_end_op(t_ast *ast)
+{
+	t_ast	*last;
+
+	if (!ast)
+		return (1);
+	last = ast;
+	while (last->right)
+		last = last->right;
+	if (is_op_type(ast->type) || is_op_type(last->type))
+		return (err_syntax("near operator\n", NULL));
+	if (is_redirection_type(ast->type))
+		return (err_syntax("near redirection\n", NULL));
+	return (1);
+}
+
+int	validate_linked_operators(t_ast *ast)
+{
+	t_ast	*current;
+	t_ast	*next;
+
+	if (!ast)
+		return (1);
+	current = ast;
+	while (current)
+	{
+		next = current->right;
+		if (!next)
+			break ;
+			if (is_op_type(current->type) &&
+			(!next || (next->type != TYPE_CMD && next->type != TYPE_PAREN_OPEN)))
+				return (err_syntax("near operator\n", NULL));
+		if (current->type == TYPE_PIPE && (!next || next->type == TYPE_PIPE))
+			return (err_syntax("near `|'\n", NULL));
+		current = current->right;
+	}
+	return (1);
+}
+validate_single_op.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   validate_single_op.c                               :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:00:02 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 19:00:03 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int	validate_ast(t_ast **ast, t_token **tokens, t_token *head);
+int	validate_nodes_with_arg(t_ast *ast);
+int	validate_parentheses_nodes(t_ast *ast);
+
+int	validate_ast(t_ast **ast, t_token **tokens, t_token *head)
+{
+	if (!*ast)
+		return (1);
+	if (!validate_nodes_with_arg(*ast) || !validate_parentheses_nodes(*ast)
+		|| !validate_linked_operators(*ast) || !validate_start_end_op(*ast))
+	{
+		free_ast(*ast);
+		*tokens = head;
+		*ast = NULL;
+		return (0);
+	}
+	return (1);
+}
+
+int	validate_nodes_with_arg(t_ast *ast)
+{
+	t_ast	*current;
+
+	current = ast;
+	while (current)
+	{
+		if (is_redirection_type(current->type))
+		{
+			if (!current->args)
+				return (err_syntax("near redirection\n", NULL));
+			if (!current->args[0] || *(current->args[0]) == '\0')
+				return (err_syntax("near redirection\n", NULL));
+		}
+		current = current->right;
+	}
+	return (1);
+}
+
+int	validate_parentheses_nodes(t_ast *ast)
+{
+	t_ast	*current;
+	int		paren_count;
+	int		err;
+
+	current = ast;
+	paren_count = 0;
+	err = 0;
+	while (current && !err)
+	{
+		if (current->type == TYPE_PAREN_OPEN)
+		{
+			paren_count++;
+			err = (current->right && current->right->type == TYPE_PAREN_CLOSE);
+		}
+		else if (current->type == TYPE_PAREN_CLOSE)
+		{
+			paren_count--;
+			err = (paren_count < 0);
+		}
+		current = current->right;
+	}
+	if (paren_count != 0 || err)
+		return (err_syntax("near parentheses\n", NULL));
+	return (1);
+}
+handle_operator.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   handle_operator.c                                  :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:01:53 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 19:01:57 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int			handle_operator(t_mshell *ms_data, char *input, int *i);
+static int	is_three_char_invalid(char c0, char c1, char c2);
+static int	is_two_char_invalid(char c0, char c1);
+static void	handle_invalid_token(t_mshell *ms, char *input, int *i, int len);
+int			op_syntax_invalid(t_mshell *ms, char *input, int *i);
+
+int	handle_operator(t_mshell *ms_data, char *input, int *i)
+{
+	char	c;
+
+	if (op_syntax_invalid(ms_data, input, i))
+		return (-1);
+	c = input[*i];
+	if (c == '|' && input[*i +1] && input[*i +1] == '|')
+		*i += add_token(ms_data, TYPE_OR, "||");
+	else if (c == '|')
+		*i += add_token(ms_data, TYPE_PIPE, "|");
+	else if (c == '&' && input[*i +1] && input[*i +1] == '&')
+		*i += add_token(ms_data, TYPE_AND, "&&");
+	else if (c == '>' && input[*i +1] && input[*i +1] == '>')
+		*i += add_token(ms_data, TYPE_REDIR_APP, ">>");
+	else if (c == '>')
+		*i += add_token(ms_data, TYPE_REDIR_OUT, ">");
+	else if (c == '<' && input[*i +1] && input[*i +1] == '<')
+		*i += add_token(ms_data, TYPE_REDIR_HDC, "<<");
+	else if (c == '<')
+		*i += add_token(ms_data, TYPE_REDIR_IN, "<");
+	else if (c == '(')
+		*i += add_token(ms_data, TYPE_PAREN_OPEN, "(");
+	else if (c == ')')
+		*i += add_token(ms_data, TYPE_PAREN_CLOSE, ")");
+	return (0);
+}
+
+static int	is_three_char_invalid(char c0, char c1, char c2)
+{
+	return ((c0 == '|' && c1 == '|' && c2 == '|')
+		|| (c0 == '&' && c1 == '&' && c2 == '&')
+		|| (c0 == '>' && c1 == '>' && c2 == '>')
+		|| (c0 == '<' && c1 == '<' && c2 == '<')
+		|| (c0 == '(' && c1 == '(' && c2 == '('));
+}
+
+static int	is_two_char_invalid(char c0, char c1)
+{
+	return ((c0 == '|' && c1 && ft_strchr("><&", c1))
+		|| (c0 == '&' && c1 && ft_strchr("><|", c1))
+		|| (c0 == '>' && c1 && ft_strchr("<|&", c1))
+		|| (c0 == '<' && c1 && ft_strchr(">|&", c1)));
+		//|| (c0 == '(' && c1 && (c1 == '(' || c1 == ')')));
+}
+
+static void	handle_invalid_token(t_mshell *ms, char *input, int *i, int len)
+{
+	char	*invalid;
+	int		flag;
+
+	invalid = ft_substr(input, *i, len);
+	if (!invalid)
+		err_exit(ERR_MSG_MEM, 1);
+	add_token(ms, TYPE_SYNTAX_INVALID, invalid);
+	flag = OP_SYNTAX_INVALID;
+	err_syntax(invalid, &flag);
+	free(invalid);
+	free_token_and_reset(&ms->tokens);
+	*i = ft_strlen(input);
+}
+
+int	op_syntax_invalid(t_mshell *ms, char *input, int *i)
+{
+	char	c[3];
+	int		len;
+
+	c[0] = input[*i];
+	c[1] = '\0';
+	c[2] = '\0';
+	if (*i + 1 < (int)ft_strlen(input))
+		c[1] = input[*i + 1];
+	if (*i + 2 < (int)ft_strlen(input))
+		c[2] = input[*i + 2];
+	len = 0;
+	if (is_three_char_invalid(c[0], c[1], c[2]))
+		len = 3;
+	else if (is_two_char_invalid(c[0], c[1]))
+		len = 2;
+	else if (c[0] == '&' && c[1] != '&')
+		len = 1;
+	if (!len)
+		return (0);
+	handle_invalid_token(ms, input, i, len);
+	return (1);
+}
+handle_word.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   handle_word.c                                      :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:03:01 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 19:03:02 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+static int	handle_quoted_word(t_mshell *ms, char *input, int *i);
+static int	handle_regular_word(t_mshell *ms, char *input, int *i);
+static int	find_word_end(char *input, int start);
+
+int	handle_word(t_mshell *ms, char *input, int *i)
+{
+	int	res;
+
+	if (input[*i] == '"' || input[*i] == '\'')
+		res = handle_quoted_word(ms, input, i);
+	else
+		res = handle_regular_word(ms, input, i);
+	if (res == -1)
+		return (1);
+	return (0);
+}
+
+static int	handle_quoted_word(t_mshell *ms, char *input, int *i)
+{
+	int		j;
+	char	*value;
+	char	quote_char;
+
+	j = *i;
+	quote_char = input[j++];
+	while (input[j])
+	{
+		j++;
+		if (input[j - 1] == quote_char)
+			break ;
+	}
+	value = ft_substr(input, *i, j - *i);
+	if (!value)
+		return (-1);
+	if (add_token(ms, TYPE_TMP_WORD, value) < 0)
+	{
+		free(value);
+		return (-1);
+	}
+	free(value);
+	*i = j - 1;
+	return (0);
+}
+
+static int	handle_regular_word(t_mshell *ms, char *input, int *i)
+{
+	int		j;
+	char	*value;
+
+	j = find_word_end(input, *i);
+	if (j <= *i)
+		return (0);
+	value = ft_substr(input, *i, j - *i);
+	if (!value)
+		return (-1);
+	if (add_token(ms, TYPE_TMP_WORD, value) < 0)
+	{
+		free(value);
+		return (-1);
+	}
+	free(value);
+	*i = j - 1;
+	return (0);
+}
+
+static int	find_word_end(char *input, int start)
+{
+	int		i;
+	char	quote_char;
+	int		in_quotes;
+
+	i = start;
+	in_quotes = 0;
+	quote_char = 0;
+	while (input[i])
+	{
+		if ((input[i] == '\'' || input[i] == '"')
+			&& (!in_quotes || (in_quotes && input[i] == quote_char)))
+		{
+			if (!in_quotes)
+				quote_char = input[i];
+			in_quotes = !in_quotes;
+			i++;
+			continue ;
+		}
+		if (!in_quotes && ft_strchr(" |<>&()\t\n", input[i]))
+			break ;
+		i++;
+	}
+	return (i);
+}
+tokenizer.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   tokenizer.c                                        :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:03:08 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 19:03:09 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int		tokenizer(t_mshell *ms_data, char *input);
+void	save_token_data(t_mshell *ms, t_token *tmp_token);
+int		add_token(t_mshell *ms, int type, char *value);
+
+int	tokenizer(t_mshell *ms_data, char *input)
+{
+	int	i;
+
+	if (!valid_input(ms_data, input))
+		return (1);
+	i = 0;
+	while (input[i])
+	{
+		while (ft_isspace(input[i]))
+			i++;
+		if (!input[i])
+			break ;
+		if (ft_strchr("|<>&()", input[i]))
+		{
+			if (handle_operator(ms_data, input, &i) == -1)
+				return (1);
+			continue ;
+		}
+		if (handle_word(ms_data, input, &i))
+			return (1);
+		i++;
+	}
+	return (0);
+}
+
+void	save_token_data(t_mshell *ms, t_token *tmp_token)
+{
+	t_token	*head;
+
+	if (!ms->tokens)
+		ms->tokens = tmp_token;
+	else
+	{
+		head = ms->tokens;
+		while (ms->tokens->next)
+			ms->tokens = ms->tokens->next;
+		tmp_token->prev = ms->tokens;
+		ms->tokens->next = tmp_token;
+		ms->tokens = head;
+	}
+}
+
+int	add_token(t_mshell *ms, int type, char *value)
+{
+	t_token		*tmp_token;
+	int			len;
+
+	tmp_token = malloc(sizeof(t_token));
+	if (!tmp_token)
+		err_exit(ERR_MSG_MEM, 1);
+	tmp_token->type = type;
+	len = ft_strlen(value);
+	tmp_token->value = malloc(len + 1);
+	if (!tmp_token->value)
+	{
+		free(tmp_token);
+		err_exit(ERR_MSG_MEM, 1);
+	}
+	ft_memcpy(tmp_token->value, value, len);
+	tmp_token->value[len] = '\0';
+	tmp_token->next = NULL;
+	tmp_token->prev = NULL;
+	save_token_data(ms, tmp_token);
+	return (len);
+}
+valid_tk.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   valid_tk.c                                         :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:03:20 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 19:03:21 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "../include/minishell.h"
+
+int		valid_input(t_mshell *ms_data, char *input);
+int		valid_parentheses(char *str);
+int		valid_quotes(char *str);
+
+int	valid_input(t_mshell *ms_data, char *input)
+{
+	int			k;
+
+	k = 0;
+	if (!input || !valid_quotes(input) || !valid_parentheses(input))
+	{
+		if (!valid_quotes(input))
+		{
+			err_syntax(ERR_MSG_QOT, &k);
+			free_token_and_reset(&ms_data->tokens);
+		}
+		if (!valid_parentheses(input))
+		{
+			err_syntax(ERR_MSG_PAREN, &k);
+			free_token_and_reset(&ms_data->tokens);
+		}
+		return (0);
+	}
+	return (1);
+}
+
+int	valid_parentheses(char *str)
+{
+	int		i;
+	char	quote_type;
+
+	i = 0;
+	quote_type = 0;
+	while (str[i])
+	{
+		if (str[i] == '(' && quote_type == 0)
+			quote_type = str[i];
+		else if (str[i] == ')')
+			quote_type = 0;
+		i++;
+	}
+	return (quote_type == 0);
+}
+
+int	valid_quotes(char *str)
+{
+	int		i;
+	char	quote_type;
+
+	i = 0;
+	quote_type = 0;
+	while (str[i])
+	{
+		if ((str[i] == '\'' || str[i] == '\"') && quote_type == 0)
+			quote_type = str[i];
+		else if (str[i] == quote_type)
+			quote_type = 0;
+		i++;
+	}
+	return (quote_type == 0);
+}
+handle_qot_envvar.c
+ev_expander_utils.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   ev_expander_utils.c                                :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: ******** <********@student.42berlin.d      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/12 21:42:26 by ********          #+#    #+#             */
+/*   Updated: 2025/03/23 21:21:12 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+#include "expander.h"
+
+int	count_linelen(t_list *lst)
+{
+	int	n;
+
+	n = 0;
+	while (lst)
+	{
+		n += ft_strlen((char *)lst->content);
+		lst = lst->next;
+	}
+	return (n);
+}
+
+char	*set_next_p(char *line)
+{
+	char	*p;
+
+	p = line;
+	if (*line == '$')
+	{
+		p++;
+		if (!ft_strncmp(p, "?", 1))
+			return (++p);
+		else
+			while (*p && ft_isalnum(*p))
+				p++;
+	}
+	else if (*line != '$')
+		p = ft_strchr(line, '$');
+	if (!p)
+		p = line + ft_strlen(line);
+	return (p);
+}
+
+int	check_dol_questn(char *key, char **envval)
+{
+	if (!ft_strncmp(key, "?", 2))
+	{
+		*envval = ft_itoa(g_exit_status);
+		if (!*envval)
+			return (ERR);
+	}
+	return (0);
+}
+util_check_qot.c
+#include "minishell.h"
+
+int	surrounded_by_single_quotes(char *arg)
+{
+	return (arg[0] == '\'' && arg[ft_strlen(arg) - 1] == '\'');
+}
+
+int	has_quotes(char *arg)
+{
+	return (ft_strchr(arg, '\'') || ft_strchr(arg, '\"'));
+}
+
+int	has_nested_quotes(char *arg)
+{
+	return (ft_strchr(arg, '\'') && ft_strchr(arg, '\"'));
+}
+
+int	get_outer_quote_type(const char *str)
+{
+	int	len;
+
+	if (!str)
+		return (0);
+	len = ft_strlen(str);
+	if (len < 2)
+		return (0);
+	if (str[0] == '\'' && str[len - 1] == '\'')
+	{
+		if (len == 2)
+			return (BLANK_IN_QUOTE);
+		return (SINGLE_QUOTE);
+	}
+	else if (str[0] == '"' && str[len - 1] == '"')
+	{
+		if (len == 2)
+			return (BLANK_IN_QUOTE);
+		return (DOUBLE_QUOTE);
+	}
+	return (0);
+}
+
+int	needs_processing(const char *arg)
+{
+	int	i;
+
+	if (!arg)
+		return (0);
+	i = 0;
+	while (arg[i])
+	{
+		if (arg[i] == '\'' || arg[i] == '"' || arg[i] == '$')
+			return (1);
+		i++;
+	}
+	return (0);
+}
+envvar_expander.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   envvar_expander.c                                  :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: ******** <********@student.42berlin.de>    +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/11 09:22:35 by ********          #+#    #+#             */
+/*   Updated: 2025/03/25 11:03:20 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+#include "expander.h"
+
+static void	create_exp_lst(t_mshell *data, t_list **lst, char *line);
+static char	*create_new_line(t_list *lst);
+static void	parse_line(t_mshell *data, t_list *lst, char *line, char *top);
+static char	*get_env_var(t_env *env, char *line, char *end);
+
+char	*ev_expander(t_mshell *data, char *line)
+{
+	t_list	*lst;
+	char	*new;
+
+	if (!line || !*line)
+		return (line);
+	if (!strncmp(line, "$", 2) || !ft_strchr(line, '$'))
+		return (line);
+	create_exp_lst(data, &lst, line);
+	new = create_new_line(lst);
+	ft_lstclear(&lst, &free);
+	free(line);
+	return (new);
+}
+
+static void	create_exp_lst(t_mshell *data, t_list **lst, char *line)
+{
+	*lst = ft_lstnew(NULL);
+	if (!lst)
+		err_exit(NULL, 0);
+	parse_line(data, *lst, line, line);
+	//testprint_lst(*lst);//to remove
+}
+
+static void	parse_line(t_mshell *data, t_list *lst, char *line, char *top)
+{
+	char	*next;
+	char	*sub;
+
+	if (!top || !lst)
+		return ;
+	next = set_next_p(top);
+	if (next && *top == '$')
+		sub = get_env_var(data->env_var, top, next - 1);
+	else if (next && *next == '$')
+		sub = ft_substr(top, 0, next - top);
+	else
+		sub = ft_strdup(top);
+	if (!sub)
+		err_exit(NULL, 0);
+	lst->content = (void *)sub;
+	if (!*next)
+		lst->next = NULL;
+	else
+	{
+		lst->next = ft_lstnew((void *)sub);
+		if (!lst->next)
+			err_exit(NULL, 0);
+	}
+	parse_line(data, lst->next, line, next);
+}
+
+static char	*get_env_var(t_env *env, char *line, char *end)
+{
+	char	*key;
+	char	*envval;
+	t_env	*node;
+
+	envval = NULL;
+	node = NULL;
+	line++;
+	key = ft_substr(line, 0, end - line + 1);
+	if (!key)
+		return (NULL);
+	if (check_dol_questn(key, &envval))
+		return (free(key), NULL);
+	if (envval)
+		return (free(key), envval);
+	node = search_env_name(env, key);
+	if (node)
+	{
+		envval = ft_strdup(node->value);
+		if (!envval)
+			return (free(key), NULL);
+	}
+	if (!envval)
+		envval = ft_strdup("");
+	free(key);
+	return (envval);
+}
+
+static char	*create_new_line(t_list *lst)
+{
+	int		new_len;
+	char	*new;
+	char	*tmp;
+	char	*sub;
+
+	new_len = count_linelen(lst);
+	new = ft_calloc(new_len + 1, 1);
+	tmp = new;
+	while (lst)
+	{
+		sub = ((char *)lst->content);
+		ft_strlcat(tmp, sub, new_len + 1);
+		lst = lst->next;
+		tmp += ft_strlen(tmp);
+	}
+	return (new);
+}
+main.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   main.c                                             :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 19:03:38 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/29 13:19:26 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+#include "executor.h"
+
+sig_atomic_t	g_exit_status = 0;
+
+int	main(int ac, char **av, char **envp)
+{
+	t_mshell	*ms_data;
+
+	if (ac != 1 || av[1])
+		return (1);
+	if (init_mshell(&ms_data, envp))
+		return (1);
+	minishell(ms_data);
+	return (0);
+}
+
+static void	process_command(t_mshell *ms_data, char *input)
+{
+	if (!*input)
+		return ;
+	add_history(input);
+	if (tokenizer(ms_data, input))
+		return ;
+	if (!parser(&ms_data->tokens, &ms_data->ast_root))
+		return ;
+//	print_token(ms_data);
+	handle_qot_envvar(ms_data, ms_data->ast_root);
+//	print_ast(ms_data); //db
+	ms_heredoc(ms_data);
+	executor(ms_data);
+}
+
+void	minishell(t_mshell *ms_data)
+{
+	char	*input;
+
+	while (!ms_data->exit_requested)
+	{
+		setup_signals(SIGNAL_MODE_INTERACTIVE);
+		if (ms_data->tokens)
+		{
+			free_token_and_reset(&ms_data->tokens);
+			ms_data->tokens = NULL;
+		}
+		if (ms_data->ast_root)
+		{
+			free_ast(ms_data->ast_root);
+			ms_data->ast_root = NULL;
+		}
+		g_exit_status = 0;//added
+		input = readline("minishell> ");
+		if (!input)
+			break ;
+		process_command(ms_data, input);
+		free(input);
+	}
+	free_mshell(ms_data);
+}
+executor.c
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   executor.c                                         :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: ******** <********@student.42berlin.de>    +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/21 22:16:44 by ********          #+#    #+#             */
+/*   Updated: 2025/03/30 21:22:25 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#include "minishell.h"
+#include "executor.h"
+
+int	executor(t_mshell *data)
+{
+	t_cmd	*cmds;
+	int		*pids;
+	int		proc_count;
+
+	if (g_exit_status)
+		return (0);
+	cmds = NULL;
+	pids = NULL;
+	if (check_paren(data->ast_root))
+		return (ERR);
+	proc_count = init_executor(data, &cmds, &pids);
+	cmds->pids = pids;
+	testprint_cmds(cmds);//test
+	if (proc_count > 0)
+		exec_cmds(data, cmds, pids);
+	free_cmddata(cmds);
+	if (pids)
+		free(pids);
+	if (proc_count == ERR)
+		err_exit(NULL, 0);
+	return (0);
+}
+
+int	exec_cmds(t_mshell *data, t_cmd *cmds, int *pids)
+{
+	int		proc_count;
+	t_cmd	*tmp;
+
+	tmp = cmds;
+	while (tmp)
+	{
+		if (tmp->paren[0])
+		{
+			tmp->paren[0]--;
+			*pids = fork();
+			if (*pids < 0)
+				return (ERR);
+			else if (!*pids)
+			{
+				cmds->child = 1;
+				exec_cmds(data, tmp, pids);
+			}
+			tmp->paren[0]++;
+			moveto_parenend(&tmp);
+			wait_cmdproc(data, pids);
+			if (!tmp)
+				break ;
+		}
+		if (tmp != cmds)
+			if (!op_check(&tmp, data->dol_questn))
+				break ;
+		proc_count = create_cmdproc(data, &tmp, cmds, pids);
+		if (proc_count == ERR)
+			return (ERR);
+		wait_cmdproc(data, pids);
+		ft_bzero(pids, sizeof(int) * proc_count);
+		if (!tmp || tmp->paren[1])
+			break ;
+	}
+	if (cmds->child)
+		return (free(pids), free_cmdproc(data, cmds), exit(0), 0);
+	return (g_exit_status);
+}
+
+int	create_cmdproc(t_mshell *data, t_cmd **cmd, t_cmd *cmd_root, int *pids)
+{
+	int	proc_count;
+	int	*pid_root;
+
+	proc_count = 0;
+	pid_root = pids;
+	while (*cmd)
+	{
+		if (open_file(*cmd) == ERR || create_pipe(*cmd) == ERR)
+			return (ERR);
+		if (*cmd == cmd_root && (*cmd)->bi && (*cmd)->op != OP_PIPE)
+			exec_builtin(data, *cmd, cmd_root);
+		else if (!g_exit_status)
+		{
+			*pids = fork();
+			if (*pids < 0)
+				return (close_pstream(*cmd), ERR);
+			if (!*pids)
+			{
+				setup_signals(SIGNAL_MODE_CHILD); //added
+				cmd_proc(data, *cmd, cmd_root, pid_root);
+			}
+			proc_count++;
+		}
+		close_pstream(*cmd);
+		if ((*cmd)->paren[1])
+			break ;
+		*cmd = (*cmd)->next;
+		if (!*cmd || (*cmd)->op == OP_AND || (*cmd)->op == OP_OR)
+			break ;
+		pids++;
+	}
+	return (proc_count);
+}
+
+void	close_pstream(t_cmd *cmd)
+{
+	if (cmd->pipe[1])
+		close(cmd->pipe[1]);
+	if (cmd->pipe_prev[0])
+		close(*(cmd->pipe_prev[0]));
+	if (cmd->fdin)
+		close(cmd->fdin);
+	if (cmd->fdout)
+		close(cmd->fdout);
+	if (!cmd->next || cmd->op == OP_AND || cmd->op == OP_OR)
+		if (cmd->pipe[0])
+			close(cmd->pipe[0]);
+}
+
+void	wait_cmdproc(t_mshell *data, int *pids)
+{
+	int	status;
+
+	status = 0;
+	while (*pids)
+	{
+		waitpid(*pids, &status, 0);
+		pids++;
+	}
+	//if (WIFEXITED(status))
+	data->dol_questn = WEXITSTATUS(status);
+}
+minishell.h
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   minishell.h                                        :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:52:06 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/29 13:18:59 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#ifndef MINISHELL_H
+# define MINISHELL_H
+
+# include <stdio.h>
+# include <stdlib.h>
+# include <unistd.h>
+# include <fcntl.h>
+# include <dirent.h>
+# include <sys/wait.h>
+# include <sys/stat.h>
+# include <signal.h>
+# include <errno.h>
+# include <string.h>
+# include <stdbool.h>
+# include <readline/readline.h>
+# include <readline/history.h>
+# include "../libft/include/libft.h"
+# include "init.h"
+# include "err.h"
+# include "sig_handler.h"
+# include "tokenizer.h"
+# include "parser.h"
+# include "free_ms.h"
+# include "heredoc.h"
+# include "expander.h"
+
+extern sig_atomic_t	g_exit_status;
+
+# define MAX_INPUT_LEN 4096
+# define ERR -1
+# define HDC_FILE "/tmp/minishell_hd"
+
+//maybe not needed
+typedef enum e_btw_quotes
+{
+	NO,
+	BTW_SINGLE,
+	BTW_DOUBLE,
+}	t_btw_quote;
+
+typedef enum e_type
+{
+	TYPE_SYNTAX_INVALID,
+	TYPE_TMP_WORD,
+	TYPE_CMD,
+	TYPE_PIPE,
+	TYPE_OR,
+	TYPE_AND,
+	TYPE_REDIR_IN,
+	TYPE_REDIR_OUT,
+	TYPE_REDIR_APP,
+	TYPE_REDIR_HDC,
+	TYPE_PAREN_OPEN,
+	TYPE_PAREN_CLOSE,
+	TYPE_ENV_QUESTION,
+	TYPE_ENV_VAR,
+}	t_type;
+
+typedef struct s_ast
+{
+	t_type			type;
+	char			**args;
+	struct s_ast	*left;
+	struct s_ast	*right;
+}	t_ast;
+
+typedef struct s_env
+{
+	char			*key;
+	char			*value;
+	struct s_env	*next;
+}	t_env;
+
+typedef struct s_token
+{
+	t_type			type;
+	char			*value;
+	struct s_token	*next;
+	struct s_token	*prev;
+}	t_token;
+
+typedef struct s_mshell
+{
+	t_token		*tokens;
+	t_ast		*ast_root;
+	t_env		*env_var;
+	t_heredoc	*hdc;
+	char		**envp;
+	char		**path;
+	int			exit_requested;
+	int			dol_questn;
+}	t_mshell;
+
+/* main.c */
+void	minishell(t_mshell *ms_data);
+
+/* print_debug.c */
+void	debug_print_hex(const char *str);
+void	print_arr(char **str);
+void	print_token(t_mshell *ms_data);
+void	print_ast(t_mshell *ms_data);
+char	*get_type_str(t_type type);
+
+#endif
+parser.h
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   parser.h                                           :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:53:47 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:53:49 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#ifndef PARSER_H
+# define PARSER_H
+
+# include "minishell.h"
+
+typedef struct s_ast		t_ast;
+typedef struct s_mshell		t_mshell;
+typedef enum e_type			t_type;
+
+/* parser.c */
+int		parser(t_token **tokens, t_ast **ast_root);
+t_ast	*save_args(t_token **tokens, t_ast **current, t_ast **root);
+t_ast	*save_single_arg(t_token **tokens, t_ast **current, t_ast **root);
+t_ast	*save_args_redirs(t_token **tokens, t_ast **current, t_ast **root);
+void	free_strarr(char **arr);
+
+/* util_cmd_with_redir.c */
+int		has_embedded_redirs(t_token *tokens);
+int		save_args_skip_redir(t_token **tokens, t_ast *cmd_node, t_token *start);
+int		count_actual_args(t_token *start);
+int		process_redirections(t_token *start, t_ast **last_node);
+t_ast	*create_redir_node(t_token *redir, t_token *target, t_ast **last_node);
+
+/* validate_ast.c */
+int		validate_ast(t_ast **ast, t_token **tokens, t_token *head);
+int		validate_nodes_with_arg(t_ast *ast);
+int		validate_parentheses_nodes(t_ast *ast);
+
+/* validate_linked_op.c */
+int		validate_linked_operators(t_ast *ast);
+int		validate_start_end_op(t_ast *ast);
+
+/* util_type_check.c */
+int		is_redir_not_hdc_type(t_type type);
+int		is_redirection_type(t_type type);
+int		is_not_op_or_paren(t_type type);
+int		is_op_type(t_type type);
+int		is_paren_type(t_type type);
+
+/* util_save_to_ast.c */
+void	save_to_position(t_ast **root, t_ast **current, t_ast *node);
+t_ast	*create_ast_node(t_type type);
+char	**collect_cmd_args(t_token **tokens);
+t_ast	*save_type(t_token **tokens, t_ast **current, t_ast **root);
+
+/* Memory management functions */
+void	free_ast(t_ast *node);
+
+#endif
+tokenizer.h
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   tokenizer.h                                        :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: jiepark <jiepark@student.42berlin.de>      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/17 18:54:07 by jiepark           #+#    #+#             */
+/*   Updated: 2025/03/17 18:54:08 by jiepark          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#ifndef TOKENIZER_H
+# define TOKENIZER_H
+
+typedef struct s_mshell	t_mshell;
+typedef struct s_token	t_token;
+
+# define UNQUOTED		0
+# define SINGLE_QUOTED	1
+# define DOUBLE_QUOTED	2
+
+//tokenizer.c
+int		tokenizer(t_mshell *ms_data, char *input);
+int		valid_quotes(char *str);
+int		valid_parentheses(char *str);
+int		valid_input(t_mshell *ms_data, char *input);
+void	save_token_data(t_mshell *ms, t_token *tmp_token);
+int		add_token(t_mshell *ms, int type, char *value);
+
+//handle_operator.c
+int		op_syntax_invalid(t_mshell *ms, char *input, int *i);
+int		handle_operator(t_mshell *ms_data, char *input, int *i);
+
+//handle_word.c
+int		handle_word(t_mshell *ms_data, char *input, int *i);
+
+#endif
+executor.h
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   executor.h                                         :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: ******** <********@student.42berlin.d      +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/02/27 14:51:38 by ********          #+#    #+#             */
+/*   Updated: 2025/03/18 18:55:58 by ********         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+#ifndef EXECUTOR_H
+# define EXECUTOR_H
+
+# define ERR -1
+
+# include "builtins.h"
+# include "heredoc.h"
+
+typedef enum e_op
+{
+	OP_NONE,
+	OP_OR,
+	OP_AND,
+	OP_PIPE
+}	t_op;
+
+typedef enum e_builtin
+{
+	BI_NONE,
+	BI_ECHO,
+	BI_CD,
+	BI_PWD,
+	BI_EXPT,
+	BI_UNSET,
+	BI_ENV,
+	BI_EXIT
+}	t_builtin;
+
+typedef enum e_type		t_type;
+typedef struct s_mshell	t_mshell;
+
+typedef struct s_cmd
+{
+	char			*path;
+	char			**args;
+	t_builtin		bi;
+	t_op			op;
+	t_type			type_rdct[2];
+	char			*file_path[2];
+	int				fdin;
+	int				fdout;
+	int				pipe[2];
+	int				paren[2];
+	int				*pipe_prev[2];
+	int				*pids;
+	int				child;
+	struct s_cmd	*next;
+}		t_cmd;
+
+// executor.c
+int	executor(t_mshell *data);
+int	exec_cmds(t_mshell *data, t_cmd *cmds, int *pids);
+int	create_cmdproc(t_mshell *data, t_cmd **cmd, t_cmd *cmd_root, int *pids);
+void	close_pstream(t_cmd *cmd);
+void	wait_cmdproc(t_mshell *data, int *pids);
+
+// exec_init.c
+int	init_executor(t_mshell *data, t_cmd **cmds, int **pids);
+void	set_cmddata(t_ast *ast, t_cmd *cmds, t_heredoc *hdc);
+void	set_rdct_type(t_ast *ast, t_cmd *cmd, t_type type, t_heredoc *hdc);
+void	set_paren_status(t_cmd *cmd);
+
+// exec_stream.c
+int	open_file(t_cmd *cmd);
+int	create_pipe(t_cmd *cmd);
+
+// exec_cmdproc.c
+int	cmd_proc(t_mshell *data, t_cmd *cmd, t_cmd *cmd_root, int *pids);
+int	set_cstream(t_cmd *cmd);
+int	check_cmd(t_mshell *data, t_cmd *cmd, t_cmd *cmd_root);
+//void	excute_builtin(t_mshell *data, t_cmd *cmd, t_builtin bi);
+char	*create_pathstr(char *path, char *cmd);
+
+// exec_builtin.c
+int	exec_builtin(t_mshell *data, t_cmd *cmd, t_cmd *cmd_root);
+int	call_builtin(t_mshell *data, t_cmd *cmd, t_cmd *cmd_root, int *std);
+void	exit_exec(t_mshell *data, t_cmd *cmd);
+
+// exec_utils.c
+int	count_cmd(t_ast *ast);
+t_builtin	isbuiltin(char *s);
+int	op_check(t_cmd **cmd, int exit);
+void	free_cmdproc(t_mshell *data, t_cmd *cmd_root);
+void	free_cmddata(t_cmd *cmd);
+void	err_cmd(t_mshell *data, t_cmd *cmd_root, char *cmd);
+
+//utils2
+int	set_stdinout(int from, int to);
+int	check_paren(t_ast *ast);
+int	check_paren_syntx(t_ast *ast, int open, int close);
+int	check_paren_with_op(t_ast *ast);
+void	moveto_parenend(t_cmd **cmd);
+
+//test_exec.c
+void	testprint_cmds(t_cmd *cmd);
+
+#endif
+Makefile
+# **************************************************************************** #
+#                                                                              #
+#                                                         :::      ::::::::    #
+#    Makefile                                           :+:      :+:    :+:    #
+#                                                     +:+ +:+         +:+      #
+#    By: ******** <********@student.42berlin.de>    +#+  +:+       +#+         #
+#                                                 +#+#+#+#+#+   +#+            #
+#    Created: 2025/03/02 16:26:53 by ********          #+#    #+#              #
+#    Updated: 2025/03/30 20:28:47 by ********         ###   ########.fr        #
+#                                                                              #
+# **************************************************************************** #
+
+NAME	=	minishell
+SRCS	=	init.c \
+		main.c \
+		err_handler.c \
+		tokenizer.c \
+		handle_operator.c \
+		handle_word.c \
+		valid_tk.c \
+		free_ms.c \
+		parser.c \
+		validate_single_op.c \
+		validate_linked_op.c \
+		util_cmd_with_redir.c \
+		util_type_check.c \
+		util_save_to_ast.c \
+		print_debug.c \
+		heredoc.c \
+		heredoc_init.c \
+		heredoc_utils.c \
+		free_ms_utils.c \
+		envvar_expander.c \
+		ev_expander_utils.c \
+		wc_expander.c \
+		wc_expander_utils.c \
+		executor.c \
+		exec_init.c \
+		exec_cmdproc.c \
+		exec_stream.c \
+		exec_builtin.c \
+		exec_utils.c \
+		exec_utils2.c \
+		ms_pwd.c \
+		ms_echo.c \
+		ms_env.c \
+		ms_export.c \
+		ms_unset.c \
+		ms_exit.c \
+		builtin_utils.c \
+		signal.c \
+		signal_util.c \
+		handle_qot_envvar.c \
+		util_check_qot.c \
+		test_utils.c \
+		test_utils2.c 
+OBJS = $(addprefix obj/, $(notdir $(SRCS:.c=.o)))
+INCLUDES = -Iinclude -Ilibft/include
+CC = cc
+CFLAGS = -Wall -Wextra -Werror
+LIBS = -Llibft -lft -lreadline
+LIBFT_MAKE = make bonus
+VPATH = src src/init src/err src/signal src/tokenizer src/ms_free src/parser \
+	src/heredoc src/ms_free src/executor src/expander src/builtins src/test
+
+# Detect OS=> macOS specific flags
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    # Check if Homebrew is installed in /opt/homebrew (Apple Silicon) or /usr/local (Intel)
+    ifeq ($(shell test -d /opt/homebrew && echo yes),yes)
+        LDFLAGS = -L/opt/homebrew/opt/readline/lib
+        CPPFLAGS = -I/opt/homebrew/opt/readline/include
+    else
+        LDFLAGS = -L/usr/local/opt/readline/lib
+        CPPFLAGS = -I/usr/local/opt/readline/include
+    endif
+endif
+
+all: $(NAME)
+
+$(NAME): obj $(OBJS)
+	$(LIBFT_MAKE) -C libft
+	$(CC) $(CFLAGS) $(OBJS) $(LIBS) $(LDFLAGS) -o $(NAME)
+
+obj:
+	mkdir -p obj
+
+obj/%.o: %.c | obj
+	$(CC) $(CFLAGS) $(INCLUDES) $(CPPFLAGS) -c $< -o $@
+
+clean:
+	make clean -C libft
+	rm -rf obj
+
+fclean: clean
+	make fclean -C libft
+	rm -f $(NAME)
+
+re: fclean all
+
+debug: CFLAGS += -g
+debug: LIBFT_MAKE = make debug
+debug: fclean all
+
+#valgrind --suppressions=readline.supp --leak-check=full --show-leak-kinds=all ./minishell
+
+.PHONY: all clean fclean re debug

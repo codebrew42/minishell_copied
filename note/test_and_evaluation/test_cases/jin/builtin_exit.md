@@ -1,0 +1,77 @@
+## tester
+### order
+1. Exit without parameters
+2. Exit with valid numbers
+3. Exit with invalid numbers and characters
+4. Exit with special cases
+5. Exit with `minishll` specific tests
+
+```shell
+# suite_exit
+
+# 1. Exit without parameters
+exit
+
+# 2. Exit with valid numbers
+exit 0
+exit 1
+exit 2
+exit 3
+exit 255
+exit 256
+exit 2147483647
+exit -2147483648
+
+# 3. Exit with invalid numbers and characters
+exit ' 3'
+exit '\t3'
+exit '3 '
+exit '3\t'
+exit '3\r'
+exit '3     a'
+exit '3\t\t\ta'
+exit bonjour
+exit 0_
+exit _0
+exit ++1
+exit --1
+exit bonjour 0
+exit 0 bonjour
+
+# 4. Exit with special cases
+exit 2000000
+exit -2000000
+exit 2147483648
+exit -2147483649
+exit 3147483648
+exit -3147483649
+exit 4294967295
+exit 4294967296
+exit -9223372036854775808
+exit 9223372036854775807
+exit -9223372036854775809
+exit 9223372036854775808
+exit 18446744073709551615
+exit 18446744073709551616
+exit 0123456789
+exit -0123456789
+exit 00000000000000000000000000000000000000000000001
+exit 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001
+exit 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+exit -00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001
+exit -99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+exit 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+exit 0 1
+exit 0 1 2 3 4 5 6 7 8 9
+
+# 5. Exit with minishll specific tests
+# These tests are specific to the minishll implementation
+exit; echo should have exited
+exit bonjoru; echo should have exited
+exit 99999999999999999999999999999999999999999999999999999; echo should have exited
+exit 9999; echo should have exited
+Exit; echo a
+exiT; echo a
+Exit; echo a
+exiT; echo a
+```
