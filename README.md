@@ -1,5 +1,6 @@
 # Minishell
 
+This Repository is a copied one from private project, written by myself and my partner.
 A simple shell implementation inspired by bash.
 
 ## Description
